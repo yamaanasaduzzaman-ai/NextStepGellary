@@ -1,0 +1,756 @@
+// Nexstep Gallery - Production-Ready Prisma Schema
+// Supports SQLite (default local) and PostgreSQL (production)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -------------------------------------------------------------
+// USER & AUTHENTICATION
+// -------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String
+  phone         String?
+  role          String    @default("CUSTOMER") // SUPER_ADMIN, ADMIN, STORE_MANAGER, ORDER_MANAGER, INVENTORY_MANAGER, CONTENT_MANAGER, CUSTOMER_SUPPORT, CUSTOMER
+  isActive      Boolean   @default(true)
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  customerProfile CustomerProfile?
+  adminProfile    AdminProfile?
+  addresses       Address[]
+  orders          Order[]
+  cart            Cart?
+  wishlist        Wishlist?
+  reviews         Review[]
+  returnRequests  ReturnRequest[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  couponUsages    CouponUsage[]
+}
+
+model CustomerProfile {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dateOfBirth    DateTime?
+  gender         String?   // MEN, WOMEN, OTHER
+  avatarUrl      String?
+  totalOrders    Int       @default(0)
+  totalSpent     Float     @default(0)
+  loyaltyPoints  Int       @default(0)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model AdminProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department     String?
+  title          String?
+  permissions    String   @default("ALL") // JSON string or array of granular permissions
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Address {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  phone          String
+  street         String
+  area           String?
+  district       String   // e.g. Dhaka, Chittagong, Sylhet
+  division       String   // e.g. Dhaka, Chattogram, Rajshahi, Khulna, Barishal, Sylhet, Rangpur, Mymensingh
+  postalCode     String?
+  isDefault      Boolean  @default(false)
+  addressType    String   @default("SHIPPING") // SHIPPING, BILLING
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  orders         Order[]
+}
+
+// -------------------------------------------------------------
+// CATALOG & PRODUCTS
+// -------------------------------------------------------------
+
+model Brand {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  logoUrl     String?
+  website     String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  imageUrl    String?
+  displayOrder Int      @default(0)
+  isActive    Boolean   @default(true)
+  
+  // Hierarchy: Subcategory support
+  parentId    String?
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  subcategories Category[] @relation("CategoryHierarchy")
+
+  // SEO metadata
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+  ogImage        String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+}
+
+model Collection {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  bannerImage String?
+  isFeatured  Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  displayOrder Int      @default(0)
+  startDate   DateTime?
+  endDate     DateTime?
+
+  // SEO metadata
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+  ogImage        String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+}
+
+model ProductAttribute {
+  id          String    @id @default(cuid())
+  name        String    // e.g. "Size", "Color", "Fabric", "Fit"
+  type        String    // "COLOR", "SIZE", "FABRIC", "FIT", "CUSTOM"
+  values      String    // JSON array of values e.g. ["S", "M", "L"] or [{"name":"Black","hex":"#111111"}]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id              String         @id @default(cuid())
+  name            String
+  slug            String         @unique
+  sku             String         @unique
+  shortDescription String?
+  description     String
+  gender          String         @default("UNISEX") // MEN, WOMEN, UNISEX
+  status          String         @default("PUBLISHED") // DRAFT, PUBLISHED, ARCHIVED, UNPUBLISHED, SCHEDULED
+  productType     String?        @default("Physical") // Physical, Digital, Bespoke
+  isFeatured      Boolean        @default(false)
+  isNewArrival    Boolean        @default(false)
+  isBestSeller    Boolean        @default(false)
+  
+  // Pricing
+  regularPrice    Float
+  salePrice       Float?
+  costPrice       Float?
+  discountPercent Float?
+  taxPercent      Float?         @default(0)
+  saleStartDate   DateTime?
+  saleEndDate     DateTime?
+
+  // Details
+  fabric          String?
+  fit             String?        // Slim Fit, Regular Fit, Relaxed Fit, Oversized
+  pattern         String?        // Solid, Striped, Checked, Textured, Embroidered
+  careInstructions String?
+  origin          String?        @default("Bangladesh")
+  weight          Float?         // in kg
+
+  // Categorization & Brand
+  categoryId      String?
+  category        Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId   String?
+  collectionId    String?
+  collection      Collection?    @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  brandId         String?
+  brand           Brand?         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  tags            String?        // Comma-separated or JSON list of tags
+
+  // Inventory Settings
+  lowStockThreshold Int?         @default(10)
+
+  // Advanced SEO Fields
+  seoTitle        String?
+  seoDescription  String?
+  seoKeywords     String?
+  ogImage         String?
+  canonicalUrl    String?
+  noIndex         Boolean        @default(false)
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  variants        ProductVariant[]
+  images          ProductImage[]
+  inventoryMovements InventoryMovement[]
+  cartItems       CartItem[]
+  wishlistItems   WishlistItem[]
+  orderItems      OrderItem[]
+  reviews         Review[]
+}
+
+model ProductVariant {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku         String    @unique
+  size        String    // XS, S, M, L, XL, XXL, Custom
+  color       String    // e.g. Charcoal Black, Off-White, Khaki, Olive
+  colorHex    String?   // e.g. #111111, #F8F7F4
+  price       Float?    // Overrides product regular price if set
+  stock       Int       @default(0)
+  barcode     String?
+  imageUrl    String?
+  isAvailable Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  inventoryMovements InventoryMovement[]
+  cartItems          CartItem[]
+  orderItems         OrderItem[]
+}
+
+model ProductImage {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url         String
+  altText     String?
+  colorTag    String?  // links specific images to a color variation
+  isPrimary   Boolean  @default(false)
+  displayOrder Int     @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model InventoryMovement {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  previousStock Int
+  newStock    Int
+  quantityChange Int    // Positive or negative
+  movementType String   // PURCHASE, ORDER_DEDUCTION, ORDER_CANCELLED_RESTOCK, RETURN_RESTOCK, MANUAL_ADJUSTMENT
+  reason      String?
+  performedBy String?   // User name or email
+  createdAt   DateTime  @default(now())
+}
+
+// -------------------------------------------------------------
+// CART & WISHLIST
+// -------------------------------------------------------------
+
+model Cart {
+  id          String     @id @default(cuid())
+  userId      String?    @unique
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guestToken  String?    @unique // Session token for guest shopping carts
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  items       CartItem[]
+}
+
+model CartItem {
+  id          String         @id @default(cuid())
+  cartId      String
+  cart        Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity    Int            @default(1)
+  size        String
+  color       String
+  unitPrice   Float
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([cartId, variantId])
+}
+
+model Wishlist {
+  id          String         @id @default(cuid())
+  userId      String         @unique
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  items       WishlistItem[]
+}
+
+model WishlistItem {
+  id          String   @id @default(cuid())
+  wishlistId  String
+  wishlist    Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([wishlistId, productId])
+}
+
+// -------------------------------------------------------------
+// ORDERS, CHECKOUT & PAYMENTS
+// -------------------------------------------------------------
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique // e.g. NXG-2026-1001
+  userId          String?
+  user            User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customerName    String
+  customerEmail   String
+  customerPhone   String
+
+  // Financials (BDT Currency)
+  subtotal        Float
+  discountAmount  Float       @default(0)
+  shippingCost    Float       @default(0)
+  taxAmount       Float       @default(0)
+  totalAmount     Float
+
+  // Statuses
+  orderStatus     String      @default("PENDING") // PENDING, CONFIRMED, PROCESSING, PACKED, SHIPPED, OUT_FOR_DELIVERY, DELIVERED, CANCELLED, RETURNED, REFUNDED
+  paymentStatus   String      @default("UNPAID")  // UNPAID, AUTHORIZED, PAID, FAILED, REFUNDED
+  paymentMethod   String      // COD, BKASH, NAGAD, SSLCOMMERZ, CARD
+
+  // Coupon
+  couponId        String?
+  couponCode      String?
+
+  // Shipping
+  shippingMethod  String      @default("STANDARD") // STANDARD, EXPRESS
+  deliveryInstructions String?
+  addressId       String?
+  address         Address?    @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
+  // Direct Address Snapshot
+  shippingStreet   String
+  shippingArea     String?
+  shippingDistrict String
+  shippingDivision String
+  shippingPostal   String?
+
+  // Notes
+  customerNotes   String?
+  internalNotes   String?
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  items           OrderItem[]
+  payments        Payment[]
+  shipment        Shipment?
+  returnRequests  ReturnRequest[]
+  orderTimeline   OrderTimeline[]
+}
+
+model OrderItem {
+  id          String         @id @default(cuid())
+  orderId     String
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  productName String
+  productSku  String
+  size        String
+  color       String
+  unitPrice   Float          // Snapshot at purchase
+  quantity    Int
+  totalPrice  Float
+  imageUrl    String?
+  createdAt   DateTime       @default(now())
+}
+
+model OrderTimeline {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status      String
+  title       String
+  description String?
+  actor       String?  // System, Admin, Customer
+  createdAt   DateTime @default(now())
+}
+
+model Payment {
+  id              String      @id @default(cuid())
+  orderId         String
+  order           Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount          Float
+  currency        String      @default("BDT")
+  gateway         String      // COD, BKASH, NAGAD, SSLCOMMERZ
+  status          String      @default("PENDING") // PENDING, SUCCESS, FAILED, CANCELLED, REFUNDED
+  transactionId   String?     @unique
+  bankTranId      String?
+  cardType        String?
+  paymentDetails  String?     // Raw JSON response or sanitized debug info
+  verifiedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  refunds         Refund[]
+}
+
+model Coupon {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  description    String?
+  discountType   String    // PERCENTAGE, FIXED_AMOUNT, FREE_SHIPPING
+  discountValue  Float
+  minOrderAmount Float?    @default(0)
+  maxDiscount    Float?    // Cap for percentage discounts
+  totalUsageLimit Int?
+  currentUsage   Int       @default(0)
+  perUserLimit   Int?      @default(1)
+  startDate      DateTime  @default(now())
+  endDate        DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  usages         CouponUsage[]
+}
+
+model CouponUsage {
+  id        String   @id @default(cuid())
+  couponId  String
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orderId   String?
+  discount  Float
+  usedAt    DateTime @default(now())
+}
+
+// -------------------------------------------------------------
+// SHIPMENT & COURIER
+// -------------------------------------------------------------
+
+model Shipment {
+  id             String      @id @default(cuid())
+  orderId        String      @unique
+  order          Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  courierProvider String     // PATHAO, STEADFAST, REDX, IN_HOUSE
+  consignmentId  String?
+  trackingCode   String?
+  shippingLabel  String?     // URL or printable data
+  status         String      @default("READY_TO_SHIP") // READY_TO_SHIP, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, RETURNED, FAILED
+  shippingNotes  String?
+  dispatchedAt   DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  events         ShipmentEvent[]
+}
+
+model ShipmentEvent {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  status      String
+  location    String?
+  note        String?
+  timestamp   DateTime @default(now())
+}
+
+// -------------------------------------------------------------
+// RETURNS & REFUNDS
+// -------------------------------------------------------------
+
+model ReturnRequest {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type        String   @default("RETURN") // RETURN, EXCHANGE
+  reason      String
+  explanation String?
+  images      String?  // JSON list of evidence image URLs
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED, RESOLVED
+  adminNotes  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  refunds     Refund[]
+}
+
+model Refund {
+  id              String         @id @default(cuid())
+  paymentId       String
+  payment         Payment        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  returnRequestId String?
+  returnRequest   ReturnRequest? @relation(fields: [returnRequestId], references: [id], onDelete: SetNull)
+  amount          Float
+  reason          String
+  status          String         @default("PENDING") // PENDING, COMPLETED, FAILED
+  transactionId   String?
+  processedBy     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+// -------------------------------------------------------------
+// REVIEWS & RATINGS
+// -------------------------------------------------------------
+
+model Review {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  authorName  String
+  rating      Int      // 1 to 5
+  title       String?
+  comment     String
+  isVerifiedPurchase Boolean @default(false)
+  isApproved  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// CMS, BANNERS, BLOG & CONTENT
+// -------------------------------------------------------------
+
+model Banner {
+  id          String    @id @default(cuid())
+  title       String
+  subtitle    String?
+  ctaText     String?
+  ctaLink     String?
+  desktopImage String
+  mobileImage String?
+  displayOrder Int      @default(0)
+  placement   String    @default("HERO") // HERO, PROMOTIONAL, CATEGORY_HEADER, POPUP
+  isActive    Boolean   @default(true)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Announcement {
+  id          String    @id @default(cuid())
+  text        String
+  link        String?
+  isActive    Boolean   @default(true)
+  displayOrder Int      @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model BlogPost {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  summary     String
+  content     String
+  coverImage  String?
+  author      String   @default("Nexstep Editorial")
+  isPublished Boolean  @default(true)
+  
+  // SEO
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+  ogImage        String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model FAQ {
+  id          String   @id @default(cuid())
+  question    String
+  answer      String
+  category    String   @default("GENERAL") // GENERAL, ORDERS, SHIPPING, RETURNS, SIZING
+  displayOrder Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// WEBSITE CUSTOMIZATION & CMS BUILDER
+// -------------------------------------------------------------
+
+model CustomPage {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String   // Rich markdown or HTML content
+  summary     String?
+  template    String?  @default("DEFAULT")
+  isPublished Boolean  @default(true)
+  
+  // SEO fields
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+  ogImage        String?
+  canonicalUrl   String?
+  noIndex        Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model NavigationMenu {
+  id          String   @id @default(cuid())
+  name        String
+  location    String   @default("HEADER") // HEADER, FOOTER, MOBILE
+  items       String   // JSON structure of menu tree
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Popup {
+  id          String    @id @default(cuid())
+  title       String
+  type        String    @default("WELCOME") // WELCOME, DISCOUNT, NEWSLETTER, CAMPAIGN
+  heading     String?
+  description String?
+  imageUrl    String?
+  ctaText     String?
+  ctaLink     String?
+  delaySeconds Int      @default(3)
+  frequency   String    @default("ONCE_PER_SESSION") // ALWAYS, ONCE_PER_SESSION, ONCE
+  targetPages String    @default("ALL") // ALL, HOME_ONLY, SHOP_ONLY
+  startDate   DateTime?
+  endDate     DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model SiteCustomization {
+  id                    String   @id @default("default")
+  
+  // Published Theme & Layouts
+  themeSettings         String   // JSON: colors, typography, borders, spacing
+  headerSettings        String   // JSON: logo, colors, visibility toggles, height
+  footerSettings        String   // JSON: logo, descriptions, columns, payment badges
+  homepageSections      String   // JSON: ordered list of 18 section types & their configs
+  seoSettings           String   // JSON: default title, meta, robots, analytics
+
+  // Draft Versions for Live Customization Preview
+  draftThemeSettings    String?  // JSON draft before publish
+  draftHeaderSettings   String?  // JSON draft before publish
+  draftFooterSettings   String?  // JSON draft before publish
+  draftHomepageSections String?  // JSON draft before publish
+  draftSeoSettings      String?  // JSON draft before publish
+
+  version               Int      @default(1)
+  updatedAt             DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// INQUIRIES, SUBSCRIBERS, SETTINGS & AUDIT
+// -------------------------------------------------------------
+
+model NewsletterSubscriber {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model ContactInquiry {
+  id          String   @id @default(cuid())
+  name        String
+  email       String
+  phone       String?
+  subject     String
+  message     String
+  status      String   @default("NEW") // NEW, IN_PROGRESS, RESOLVED, ARCHIVED
+  adminNotes  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model StoreSettings {
+  id          String   @id @default("default")
+  storeName   String   @default("Nexstep Gallery")
+  currency    String   @default("BDT")
+  currencySymbol String @default("৳")
+  contactEmail String  @default("support@nexstepgallery.com")
+  contactPhone String  @default("+880 1700-000000")
+  address     String   @default("Gulshan 2, Dhaka 1212, Bangladesh")
+  insideDhakaShipping Float @default(70)
+  outsideDhakaShipping Float @default(130)
+  freeShippingThreshold Float @default(3000)
+  enableCod   Boolean  @default(true)
+  enableBkash Boolean  @default(true)
+  enableNagad Boolean  @default(true)
+  enableSslcommerz Boolean @default(true)
+  vatPercent  Float    @default(0) // Default 0 or 5% if applicable
+  updatedAt   DateTime @updatedAt
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // ORDER_CREATED, PAYMENT_RECEIVED, LOW_STOCK, INQUIRY_RECEIVED
+  title       String
+  message     String
+  link        String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String   // e.g. "PRODUCT_CREATE", "ORDER_STATUS_UPDATE", "STOCK_ADJUST"
+  resource    String   // e.g. "Product:123", "Order:NXG-2026-1001"
+  details     String?  // JSON details of changes
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+}
